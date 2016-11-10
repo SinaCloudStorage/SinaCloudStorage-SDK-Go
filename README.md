@@ -62,7 +62,7 @@ func Display(dat []byte)
 		"GRPS000000ANONYMOUSE": [
 			"read"
 		],
-		"SINA000000RUIKUNTEST": [
+		"SINA000000OWNER": [
 			"read",
 			"write",
 			"read_acp",
