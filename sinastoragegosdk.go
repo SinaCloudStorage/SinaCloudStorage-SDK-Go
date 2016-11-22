@@ -513,6 +513,7 @@ func (scs *SCS) prepare(req *request) error {
 	}
 	req.headers["Host"] = []string{u.Host}
 	req.headers["Date"] = []string{time.Now().In(time.UTC).Format(time.RFC1123)}
+	req.headers["User-Agent"] = []string{"s3gosdk-1.0"}
 	sign(*scs, req.method, req.signpath, req.params, req.headers)
 	return nil
 }
