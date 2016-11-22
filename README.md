@@ -60,6 +60,11 @@ func NewSCS(accessKey, secretKey, endPoint string) (scs *SCS)
 ```
 创建一个SCS类
 
+示例：
+```
+scs := NewSCS(ak, sk, "http://uri")
+```
+
 ```
 func (scs *SCS) Bucket(name string) *Bucket
 ```
@@ -145,7 +150,7 @@ func (b *Bucket) Put(object, uploadFile string, acl ACL) error
 ```
 func (b *Bucket) PutSsk(object, uploadFile string, acl ACL) (string, error)
 ```
-以ssk的方式上传object, 返回x-sina-serverside-key
+以ssk的方式上传object, 返回响应header头的x-sina-serverside-key
 
 ```
 func (b *Bucket) PutAcl(object string, acl map[string][]string) error
@@ -159,7 +164,7 @@ acl := map[string][]string{
 ```
 
 ```
-func (b *Bucket) PutMeta(object string, meta map[string]string) error
+func (b *Bucket) PutMeta(object string, meta map[striring]string) error
 ```    
 更新一个已经存在的object的附加meta信息，这个接口无法更新文件的基本信息，如文件的大小和类型等，meta格式如下： 
 
@@ -246,11 +251,10 @@ func (m *Multi) Complete(partInfo []part) error
 	}
 	for k, v := range listPart {
 		if partInfo[k].ETag != v.ETag {
-			fmt.Println("分片不匹配")
-            os.exit("xxx")
+			log.Fatal("分片不匹配")
 		}
 	}
-	err = multi.Complete(partInfo)
+	err = multi.Complete(listPart)
 	if err != nil {
 		return err
 	}
@@ -269,3 +273,4 @@ type Error struct {
 ```
 func (e *Error) Error() string
 ```
+
