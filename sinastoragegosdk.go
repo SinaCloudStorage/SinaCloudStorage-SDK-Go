@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -452,7 +453,12 @@ func (req *request) urlencode() (*url.URL, error) {
 	default:
 		u.RawQuery = strings.Join(sigleArray, "&")
 	}
-	u.Path = req.signpath
+	re := regexp.MustCompile(req.bucket)
+	if re.MatchString(u.Host) {
+		u.Path = req.path
+	} else {
+		u.Path = req.signpath
+	}
 	return u, nil
 }
 
@@ -477,6 +483,7 @@ func (scs *SCS) prepare(req *request) error {
 			req.method = "GET"
 		}
 		// Copy so they can be mutated without affecting on retries.
+
 		params := make(url.Values)
 		headers := make(http.Header)
 		for k, v := range req.params {
@@ -528,11 +535,10 @@ func (scs *SCS) run(req *request) (hresp *http.Response, err error) {
 	htCli := &http.Client{
 		Transport: &http.Transport{
 			Dial: func(netw, addr string) (net.Conn, error) {
-				c, err := net.DialTimeout(netw, addr, time.Second*5) //设置建立连接超时
+				c, err := net.DialTimeout(netw, addr, time.Second*5) //设置建立连接超时时间
 				if err != nil {
 					return nil, err
 				}
-				//				c.SetDeadline(time.Now().Add(10 * time.Second)) //设置发送接收数据超时
 				return c, nil
 			},
 		},
