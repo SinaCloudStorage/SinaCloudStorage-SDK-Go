@@ -228,14 +228,14 @@ func (b *Bucket) URL(object string) string
 ```
 type Multi struct {
     Bucket   *Bucket
-    Key      string
+    Object   string
     UploadId string
 }
 ```
 
 ###<font color="#4682B4">func (b *Bucket) InitMulti</font>
 ```
-func (b *Bucket) InitMulti(key string) (*Multi, error)
+func (b *Bucket) InitMulti(object string) (*Multi, error)
 ```
 大文件分片上传初始化，返回Multi类 
 

@@ -12,7 +12,7 @@ import (
 
 type Multi struct {
 	Bucket   *Bucket
-	Key      string
+	Object   string
 	UploadId string
 }
 
@@ -24,7 +24,7 @@ type part struct {
 //大文件分片上传初始化，返回Multi类
 //注意：在初始化上传接口中要求必须进行用户认证，匿名用户无法使用该接口
 //在初始化上传时需要给定文件上传所需要的meta绑定信息，在后续的上传中该信息将被保留，并在最终完成时写入云存储系统
-func (b *Bucket) InitMulti(key string) (*Multi, error) {
+func (b *Bucket) InitMulti(object string) (*Multi, error) {
 	var bodyTmp interface{}
 	params := map[string][]string{
 		"multipart": {""},
@@ -33,13 +33,13 @@ func (b *Bucket) InitMulti(key string) (*Multi, error) {
 	req := &request{
 		method: "POST",
 		bucket: b.Name,
-		path:   key,
+		path:   object,
 		params: params,
 	}
 	body, err := b.query(req)
 	json.Unmarshal(body, &bodyTmp)
 	uploadId := bodyTmp.(map[string]interface{})["UploadId"].(string)
-	return &Multi{Bucket: b, Key: key, UploadId: uploadId}, err
+	return &Multi{Bucket: b, Object: object, UploadId: uploadId}, err
 }
 
 func (m *Multi) putPart(data []byte, contType string, acl ACL, number int) (part, error) {
@@ -59,7 +59,7 @@ func (m *Multi) putPart(data []byte, contType string, acl ACL, number int) (part
 	req := &request{
 		method:  "PUT",
 		bucket:  m.Bucket.Name,
-		path:    m.Key,
+		path:    m.Object,
 		headers: header,
 		params:  params,
 		body:    body,
@@ -116,7 +116,7 @@ func (m *Multi) ListPart() ([]part, error) {
 	}
 	req := &request{
 		bucket: m.Bucket.Name,
-		path:   m.Key,
+		path:   m.Object,
 		params: params,
 	}
 	parts, err := m.Bucket.query(req)
@@ -147,7 +147,7 @@ func (m *Multi) Complete(partInfo []part) error {
 	req := &request{
 		method:  "POST",
 		bucket:  m.Bucket.Name,
-		path:    m.Key,
+		path:    m.Object,
 		params:  params,
 		body:    bytes.NewReader(partsJ),
 		headers: map[string][]string{"Content-Length": {strconv.FormatInt(int64(len(partsJ)), 10)}},
