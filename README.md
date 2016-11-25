@@ -159,6 +159,19 @@ func (b *Bucket) Put(object, uploadFile string, acl ACL) error
 	}
 ```
 
+###<font color="#4682B4">func (b *Bucket) PutExpire</font>
+```
+func (b *Bucket) PutExpire(object, uploadFile string, acl ACL, expire time.Time) error
+```
+// 文件上传并添加文件过期时间
+示例：
+```
+        err := bt.PutExpire("test.go", "/tmp/test.go", sdk.Private, time.Now().Add(60*time.Second))
+        if err != nil {
+                return err
+        }
+```
+
 ###<font color="#4682B4">func (b *Bucket) PutSsk</font>
 ```
 func (b *Bucket) PutSsk(object, uploadFile string, acl ACL) (string, error)

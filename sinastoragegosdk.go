@@ -205,11 +205,25 @@ func (b *Bucket) Put(object, uploadFile string, acl ACL) error {
 	if err != nil {
 		return err
 	}
-	err = b.put(object, data, acl)
+	err = b.put(object, data, acl, "")
 	return err
 }
 
-func (b *Bucket) put(path string, data []byte, acl ACL) error {
+// 文件上传并添加过期时间
+func (b *Bucket) PutExpire(object, uploadFile string, acl ACL, expire time.Time) error {
+	expires := expire.UTC().Format(time.RFC1123)
+	if acl == "" {
+		acl = Private
+	}
+	data, err := ioutil.ReadFile(uploadFile)
+	if err != nil {
+		return err
+	}
+	err = b.put(object, data, acl, expires)
+	return err
+}
+
+func (b *Bucket) put(path string, data []byte, acl ACL, expires string) error {
 	body := bytes.NewBuffer(data)
 	md5 := contMd5(data)
 	contType := http.DetectContentType(data)
@@ -219,8 +233,11 @@ func (b *Bucket) put(path string, data []byte, acl ACL) error {
 		"Content-MD5":               {md5},
 		"x-amz-acl":                 {string(acl)},
 		"x-amz-meta-uploadlocation": {"/" + b.Name},
-		//"x-sina-expire":             {time.Now().Add(10 * time.Second).Format(time.RFC1123)},
 	}
+	if expires != "" {
+		header["x-sina-expire"] = []string{expires}
+	}
+
 	req := &request{
 		method:  "PUT",
 		bucket:  b.Name,
