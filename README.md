@@ -130,11 +130,14 @@ func (b *Bucket) Get(object string) (data []byte, err error)
 
 示例：
 ```
+	scs := sdk.NewSCS(ak, sk, "http://uri")
+	bt := scs.Bucket("bucketname")
+
 	fd, err := os.Create("/tmp/3.png")
     if err != nil {
     	return err
     }
-	data, err := b.Get("3.png")
+	data, err := bt.Get("3.png")
     if err != nil {
     	return err
     }
