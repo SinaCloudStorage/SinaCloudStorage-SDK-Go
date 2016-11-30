@@ -211,7 +211,7 @@ func (b *Bucket) Put(object, uploadFile string, acl ACL) error {
 
 // 文件上传并添加过期时间
 func (b *Bucket) PutExpire(object, uploadFile string, acl ACL, expire time.Time) error {
-	expires := expire.UTC().Format(time.RFC1123)
+	expires := expire.Format(time.RFC1123)
 	if acl == "" {
 		acl = Private
 	}
