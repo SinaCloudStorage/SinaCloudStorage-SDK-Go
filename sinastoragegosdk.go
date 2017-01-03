@@ -557,6 +557,7 @@ func (scs *SCS) run(req *request) (hresp *http.Response, err error) {
 				if err != nil {
 					return nil, err
 				}
+//				c.SetDeadline(time.Now().Add(3 * time.Second)) //设置发送接收数据超时
 				return c, nil
 			},
 		},

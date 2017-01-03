@@ -126,10 +126,11 @@ func (m *Multi) ListPart() ([]part, error) {
 	var partsTmp interface{}
 	json.Unmarshal(parts, &partsTmp)
 	partstmp := partsTmp.(map[string]interface{})["Parts"].([]interface{})
+	partsInfo = make([]part, len(partstmp))
 	for _, v := range partstmp {
 		a := int(v.(map[string]interface{})["PartNumber"].(float64))
 		b := v.(map[string]interface{})["ETag"].(string)
-		partsInfo = append(partsInfo, part{a, b})
+		partsInfo[a-1] = part{a, b}
 	}
 	return partsInfo, nil
 }
