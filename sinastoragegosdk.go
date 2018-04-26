@@ -181,6 +181,19 @@ func (b *Bucket) Get(object string) (data []byte, err error) {
 	return data, err
 }
 
+//get object data by range
+func (b *Bucket) GetRange(object string, offset int64) (data []byte, err error) {
+	headers := make(http.Header)
+	headers.Add("Range", "bytes="+strconv.FormatInt(offset, 10)+"-")
+	req := &request{
+		bucket: b.Name,
+		path:   object,
+		headers:headers,
+	}
+	data, err = b.query(req)
+	return data, err
+}
+
 // 过拷贝方式创建object（不上传具体的文件内容,而是通过COPY方式对系统内另一文件进行复制）
 func (b *Bucket) Copy(dstObject, srcBucket, srcObject string) error {
 	header := map[string][]string{
@@ -569,7 +582,7 @@ func (scs *SCS) run(req *request) (hresp *http.Response, err error) {
 	if err != nil {
 		return nil, err
 	}
-	if hresp.StatusCode != 200 && hresp.StatusCode != 204 {
+	if hresp.StatusCode != 200 && hresp.StatusCode != 204 && hresp.StatusCode != 206 {
 		return nil, buildError(hresp)
 	}
 	return hresp, nil
