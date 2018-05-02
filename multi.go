@@ -16,7 +16,7 @@ type Multi struct {
 	UploadId string
 }
 
-type part struct {
+type Part struct {
 	PartNumber int
 	ETag       string
 }
@@ -42,7 +42,7 @@ func (b *Bucket) InitMulti(object string) (*Multi, error) {
 	return &Multi{Bucket: b, Object: object, UploadId: uploadId}, err
 }
 
-func (m *Multi) putPart(data []byte, contType string, acl ACL, number int) (part, error) {
+func (m *Multi) putPart(data []byte, contType string, acl ACL, number int) (Part, error) {
 	body := bytes.NewBuffer(data)
 	md5 := contMd5(data)
 	header := map[string][]string{
@@ -66,18 +66,18 @@ func (m *Multi) putPart(data []byte, contType string, acl ACL, number int) (part
 	}
 	_, err := m.Bucket.query(req)
 	eTag, _ := base64.StdEncoding.DecodeString(md5)
-	return part{number, fmt.Sprintf("%x", eTag)}, err
+	return Part{number, fmt.Sprintf("%x", eTag)}, err
 }
 
 //上传分片, 注意：分片数不能超过2048
-func (m *Multi) PutPart(uploadFile string, acl ACL, partSize int) ([]part, error) {
+func (m *Multi) PutPart(uploadFile string, acl ACL, partSize int) ([]Part, error) {
 	fd, err := os.Open(uploadFile)
 	if err != nil {
 		return nil, err
 	}
 	defer fd.Close()
 	data := make([]byte, partSize)
-	var partInfo []part
+	var partInfo []Part
 	var offset int64 = 0
 	var i int = 1
 	for {
@@ -108,8 +108,8 @@ func (m *Multi) PutPart(uploadFile string, acl ACL, partSize int) ([]part, error
 }
 
 //列出已经上传的所有分片信息
-func (m *Multi) ListPart() ([]part, error) {
-	var partsInfo []part
+func (m *Multi) ListPart() ([]Part, error) {
+	var partsInfo []Part
 	params := map[string][]string{
 		"uploadId":  {m.UploadId},
 		"formatter": {"json"},
@@ -126,17 +126,17 @@ func (m *Multi) ListPart() ([]part, error) {
 	var partsTmp interface{}
 	json.Unmarshal(parts, &partsTmp)
 	partstmp := partsTmp.(map[string]interface{})["Parts"].([]interface{})
-	partsInfo = make([]part, len(partstmp))
+	partsInfo = make([]Part, len(partstmp))
 	for _, v := range partstmp {
 		a := int(v.(map[string]interface{})["PartNumber"].(float64))
 		b := v.(map[string]interface{})["ETag"].(string)
-		partsInfo[a-1] = part{a, b}
+		partsInfo[a-1] = Part{a, b}
 	}
 	return partsInfo, nil
 }
 
 //大文件分片上传拼接（合并）
-func (m *Multi) Complete(partInfo []part) error {
+func (m *Multi) Complete(partInfo []Part) error {
 	partsJ, err := json.Marshal(partInfo)
 	if err != nil {
 		return err
