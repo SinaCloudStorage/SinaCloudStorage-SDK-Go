@@ -281,19 +281,19 @@ func (b *Bucket) InitMulti(object string) (*Multi, error)
 
 ### func (m *Multi) PutPart
 ```
-func (m *Multi) PutPart(uploadFile string, acl ACL, partSize int) ([]part, error)
+func (m *Multi) PutPart(uploadFile string, acl ACL, partSize int) ([]Part, error)
 ```
 上传分片, 注意：分片数不能超过2048
 
 ### func (m *Multi) ListPart
 ```
-func (m *Multi) ListPart() ([]part, error)
+func (m *Multi) ListPart() ([]Part, error)
 ```
 列出已经上传的所有分片信息
 
 ### func (m *Multi) Complete
 ```
-func (m *Multi) Complete(partInfo []part) error
+func (m *Multi) Complete(partInfo []Part) error
 ```
 大文件分片上传拼接（合并）
 
