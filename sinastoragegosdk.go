@@ -227,7 +227,7 @@ func (b *Bucket) PutContent(path string, data []byte, acl ACL) error {
 	if acl == "" {
 		acl = Private
 	}
-	err = b.put(object, data, acl, "")
+	err := b.put(path, data, acl, "")
 	return err
 }
 
