@@ -236,6 +236,16 @@ func (b *Bucket) PutExpire(object, uploadFile string, acl ACL, expire time.Time)
 	return err
 }
 
+// 从字符串写入文件
+func (b *Bucket) PutContent(path string, data []byte, acl ACL, expires time.Time) error {
+	expires := expire.Format(time.RFC1123)
+	if acl == "" {
+		acl = Private
+	}
+	err = b.put(object, data, acl, expires)
+	return err
+}
+
 func (b *Bucket) put(path string, data []byte, acl ACL, expires string) error {
 	body := bytes.NewBuffer(data)
 	md5 := contMd5(data)
