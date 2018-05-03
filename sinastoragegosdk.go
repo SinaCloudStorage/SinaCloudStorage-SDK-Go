@@ -222,6 +222,15 @@ func (b *Bucket) Put(object, uploadFile string, acl ACL) error {
 	return err
 }
 
+// 从字符串写入文件
+func (b *Bucket) PutContent(path string, data []byte, acl ACL) error {
+	if acl == "" {
+		acl = Private
+	}
+	err = b.put(object, data, acl, "")
+	return err
+}
+
 // 文件上传并添加过期时间
 func (b *Bucket) PutExpire(object, uploadFile string, acl ACL, expire time.Time) error {
 	expires := expire.Format(time.RFC1123)
@@ -231,16 +240,6 @@ func (b *Bucket) PutExpire(object, uploadFile string, acl ACL, expire time.Time)
 	data, err := ioutil.ReadFile(uploadFile)
 	if err != nil {
 		return err
-	}
-	err = b.put(object, data, acl, expires)
-	return err
-}
-
-// 从字符串写入文件
-func (b *Bucket) PutContent(path string, data []byte, acl ACL, expires time.Time) error {
-	expires := expire.Format(time.RFC1123)
-	if acl == "" {
-		acl = Private
 	}
 	err = b.put(object, data, acl, expires)
 	return err
