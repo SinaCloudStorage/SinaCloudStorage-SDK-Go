@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -51,6 +53,7 @@ func (m *Multi) putPart(data []byte, contType string, acl ACL, number int) (Part
 		"x-amz-acl":                 {string(acl)},
 		"x-amz-meta-uploadlocation": {fmt.Sprintf("/%s", m.Bucket.Name)},
 		"Content-Type":              {contType},
+		"Connection":                {"close"},
 	}
 	params := map[string][]string{
 		"partNumber": {strconv.FormatInt(int64(number), 10)},
@@ -69,6 +72,59 @@ func (m *Multi) putPart(data []byte, contType string, acl ACL, number int) (Part
 	return Part{number, fmt.Sprintf("%x", eTag)}, err
 }
 
+type Job struct {
+	Number     int
+	PieceCount int
+	Offset     int64
+	PartSize   int
+	Fd         *os.File
+	Acl        ACL
+	Minstance  *Multi
+}
+
+func newJob(i int, pieceCount int, offset int64, partSize int, fd *os.File, acl ACL, m *Multi) Job {
+	return Job{
+		Number:     i,
+		PieceCount: pieceCount,
+		Offset:     offset,
+		PartSize:   partSize,
+		Fd:         fd,
+		Acl:        acl,
+		Minstance:  m}
+}
+
+func doPut(job Job, JobResultChan chan Part, JobResultErrorChan chan error) {
+	if job.Number > job.PieceCount {
+		JobResultErrorChan <- nil
+		return
+	}
+	ne, err := job.Fd.Seek(job.Offset, 0)
+	if err != nil {
+		JobResultErrorChan <- err
+		return
+	}
+	data := make([]byte, job.PartSize)
+	me, errR := job.Fd.ReadAt(data, ne)
+	if me < len(data) {
+		tmp := make([]byte, me)
+		copy(tmp, data)
+		data = data[0:0]
+		data = tmp
+	}
+	contType := http.DetectContentType(data)
+	part, err := job.Minstance.putPart(data, contType, job.Acl, job.Number)
+	if err != nil {
+		JobResultErrorChan <- err
+		return
+	}
+	if errR != nil && errR != io.EOF {
+		JobResultErrorChan <- err
+		return
+	}
+	JobResultErrorChan <- nil
+	JobResultChan <- part
+}
+
 //上传分片, 注意：分片数不能超过2048
 func (m *Multi) PutPart(uploadFile string, acl ACL, partSize int) ([]Part, error) {
 	fd, err := os.Open(uploadFile)
@@ -76,34 +132,54 @@ func (m *Multi) PutPart(uploadFile string, acl ACL, partSize int) ([]Part, error
 		return nil, err
 	}
 	defer fd.Close()
-	data := make([]byte, partSize)
 	var partInfo []Part
 	var offset int64 = 0
-	var i int = 1
-	for {
-		ne, err := fd.Seek(offset, 0)
-		if err != nil {
-			return nil, err
-		}
-		me, errR := fd.ReadAt(data, ne)
-		if me < len(data) {
-			tmp := make([]byte, me)
-			copy(tmp, data)
-			data = data[0:0]
-			data = tmp
-		}
-		contType := http.DetectContentType(data)
-		part, err := m.putPart(data, contType, acl, i)
-		if err != nil {
-			return nil, err
-		}
-		partInfo = append(partInfo, part)
-		if errR != nil {
-			break
-		}
-		i++
-		offset = offset + int64(me)
+	/*Calculating the number of pieces*/
+	fi, err := fd.Stat()
+	if err != nil {
+		// Could not obtain stat, handle error
+		return nil, err
 	}
+	fileSize := fi.Size()
+	pieceCount := int(math.Ceil(float64(fileSize) / float64(partSize)))
+	if pieceCount > 2048 {
+		return nil, fmt.Errorf("too many pieces number, max 2048")
+	}
+	Concurrency := 5
+
+	JobResultChan := make([]chan Part, pieceCount)
+	JobResultErrotChan := make([]chan error, pieceCount)
+
+	chLimit := make(chan bool, Concurrency)
+
+	limitFunc := func(job Job, chLimit chan bool, ch chan Part, chError chan error) {
+		doPut(job, ch, chError)
+		<-chLimit
+	}
+
+	for i := 1; i <= pieceCount; i++ {
+		JobResultChan[i-1] = make(chan Part, 1)
+		JobResultErrotChan[i-1] = make(chan error, 1)
+		chLimit <- true
+		job := newJob(i, pieceCount, offset, partSize, fd, acl, m)
+		go limitFunc(job, chLimit, JobResultChan[i-1], JobResultErrotChan[i-1])
+		offset = offset + int64(partSize)
+	}
+
+	/*error*/
+	for _, ch := range JobResultErrotChan {
+		err := <-ch
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	/*result*/
+	for _, ch := range JobResultChan {
+		part := <-ch
+		partInfo = append(partInfo, part)
+	}
+
 	return partInfo, nil
 }
 
