@@ -44,6 +44,11 @@ func (b *Bucket) InitMulti(object string) (*Multi, error) {
 	return &Multi{Bucket: b, Object: object, UploadId: uploadId}, err
 }
 
+func (m *Multi) PutPartSelf(data []byte, contType string, acl ACL, number int) (Part, error) {
+	part,err := m.putPart(data, contType, acl, number)
+	return part, err
+}
+
 func (m *Multi) putPart(data []byte, contType string, acl ACL, number int) (Part, error) {
 	body := bytes.NewBuffer(data)
 	md5 := contMd5(data)
