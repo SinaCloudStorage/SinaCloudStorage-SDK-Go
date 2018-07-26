@@ -39,6 +39,9 @@ func (b *Bucket) InitMulti(object string) (*Multi, error) {
 		params: params,
 	}
 	body, err := b.query(req)
+	if err != nil {
+		return nil, err
+	}
 	json.Unmarshal(body, &bodyTmp)
 	uploadId := bodyTmp.(map[string]interface{})["UploadId"].(string)
 	return &Multi{Bucket: b, Object: object, UploadId: uploadId}, err
