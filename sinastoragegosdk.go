@@ -186,9 +186,9 @@ func (b *Bucket) GetRange(object string, offset int64) (data []byte, err error) 
 	headers := make(http.Header)
 	headers.Add("Range", "bytes="+strconv.FormatInt(offset, 10)+"-")
 	req := &request{
-		bucket: b.Name,
-		path:   object,
-		headers:headers,
+		bucket:  b.Name,
+		path:    object,
+		headers: headers,
 	}
 	data, err = b.query(req)
 	return data, err
@@ -496,7 +496,7 @@ func (req *request) urlencode() (*url.URL, error) {
 	if re.MatchString(u.Host) {
 		u.Path = req.path
 	} else {
-		u.Path = req.signpath
+		u.Path = "/" + req.bucket + req.path
 	}
 	return u, nil
 }
@@ -536,12 +536,14 @@ func (scs *SCS) prepare(req *request) error {
 		if !strings.HasPrefix(req.path, "/") {
 			req.path = "/" + req.path
 		}
-		req.signpath = req.path
+
 		if req.bucket != "" {
 			if strings.IndexAny(req.bucket, "/:@") >= 0 {
 				return fmt.Errorf("bad S3 bucket: %q", req.bucket)
 			}
-			req.signpath = "/" + req.bucket + req.signpath
+			req.signpath = "/" + req.bucket + (&url.URL{Path: req.path}).RequestURI()
+		} else {
+			req.signpath = (&url.URL{Path: req.path}).RequestURI()
 		}
 		req.baseuri = scs.EndPoint
 		req.baseuri = strings.Replace(req.baseuri, "$", req.bucket, -1)
@@ -579,7 +581,7 @@ func (scs *SCS) run(req *request) (hresp *http.Response, err error) {
 				if err != nil {
 					return nil, err
 				}
-//				c.SetDeadline(time.Now().Add(3 * time.Second)) //设置发送接收数据超时
+				//c.SetDeadline(time.Now().Add(3 * time.Second)) //设置发送接收数据超时
 				return c, nil
 			},
 		},
