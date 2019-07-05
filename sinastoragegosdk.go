@@ -353,6 +353,39 @@ func (b *Bucket) Relax(object, uploadFile string, acl ACL) error {
 	return err
 }
 
+func (b *Bucket) RelaxWithSha1(object, sha1 string, size int64, acl ACL, metaHeader map[string]string, requestHeader map[string]string) error {
+	if acl == "" {
+		acl = Private
+	}
+	header := map[string][]string{
+		"s-sina-length": {strconv.FormatInt(int64(size), 10)},
+		"s-sina-sha1":   {sha1},
+		"x-amz-acl":     {string(acl)},
+		"Content-MD5":   {sha1},
+	}
+	if len(metaHeader) > 0 {
+		for index, value := range metaHeader {
+			header[index] = []string{fmt.Sprintf("x-amz-meta-%s", value)}
+		}
+	}
+	if len(requestHeader) > 0 {
+		for index, val := range requestHeader {
+			header[index] = []string{fmt.Sprintf("%s", val)}
+		}
+	}
+	fmt.Println(header)
+	params := map[string][]string{"relax": []string{""}}
+	req := &request{
+		method:  "PUT",
+		bucket:  b.Name,
+		params:  params,
+		headers: header,
+		path:    object,
+	}
+	_, err := b.query(req)
+	return err
+}
+
 // 更新一个已经存在的object的附加meta信息
 // meta 格式举例： meta := map[string]string{"x-amz-meta-name": "sandbox", "x-amz-meta-age": "13"}
 // 注意：这个接口无法更新文件的基本信息，如文件的大小和类型等
