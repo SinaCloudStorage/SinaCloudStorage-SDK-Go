@@ -373,7 +373,6 @@ func (b *Bucket) RelaxWithSha1(object, sha1 string, size int64, acl ACL, metaHea
 			header[index] = []string{fmt.Sprintf("%s", val)}
 		}
 	}
-	fmt.Println(header)
 	params := map[string][]string{"relax": []string{""}}
 	req := &request{
 		method:  "PUT",
