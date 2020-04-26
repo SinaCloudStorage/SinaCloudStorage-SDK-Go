@@ -222,6 +222,19 @@ func (b *Bucket) Put(object, uploadFile string, acl ACL) error {
 	return err
 }
 
+//PutWithMime upload file with content-type
+func (b *Bucket) PutWithMime(object, uploadFile string, acl ACL, contentType string) error {
+	if acl == "" {
+		acl = Private
+	}
+	data, err := ioutil.ReadFile(uploadFile)
+	if err != nil {
+		return err
+	}
+	err = b.putWithMine(object, data, acl, "", contentType)
+	return err
+}
+
 // 从字符串写入文件
 func (b *Bucket) PutContent(path string, data []byte, acl ACL) error {
 	if acl == "" {
@@ -245,10 +258,38 @@ func (b *Bucket) PutExpire(object, uploadFile string, acl ACL, expire time.Time)
 	return err
 }
 
+func (b *Bucket) putWithMine(path string, data []byte, acl ACL, expires string, contentType string) error {
+	body := bytes.NewBuffer(data)
+	md5 := contMd5(data)
+	var contType string
+	contType = contentType
+	header := map[string][]string{
+		"Content-Length":            {strconv.FormatInt(int64(len(data)), 10)},
+		"Content-Type":              {contType},
+		"Content-MD5":               {md5},
+		"x-amz-acl":                 {string(acl)},
+		"x-amz-meta-uploadlocation": {"/" + b.Name},
+	}
+	if expires != "" {
+		header["x-sina-expire"] = []string{expires}
+	}
+
+	req := &request{
+		method:  "PUT",
+		bucket:  b.Name,
+		path:    path,
+		headers: header,
+		body:    body,
+	}
+	_, err := b.query(req)
+	return err
+}
+
 func (b *Bucket) put(path string, data []byte, acl ACL, expires string) error {
 	body := bytes.NewBuffer(data)
 	md5 := contMd5(data)
-	contType := http.DetectContentType(data)
+	var contType string
+	contType = http.DetectContentType(data)
 	header := map[string][]string{
 		"Content-Length":            {strconv.FormatInt(int64(len(data)), 10)},
 		"Content-Type":              {contType},
