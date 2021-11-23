@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -179,6 +180,33 @@ func (b *Bucket) Get(object string) (data []byte, err error) {
 	}
 	data, err = b.query(req)
 	return data, err
+}
+
+// 下载到本地文件
+func (b *Bucket) Download(object ,localPath string) error {
+	req := &request{
+		bucket: b.Name,
+		path:   object,
+	}
+	err := b.prepare(req)
+	if err != nil {
+		return err
+	}
+	hresp, err := b.run(req)
+	if err != nil {
+		return err
+	}
+	defer hresp.Body.Close()
+	out, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, hresp.Body)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 //get object data by range
