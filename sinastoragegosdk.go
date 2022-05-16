@@ -183,7 +183,7 @@ func (b *Bucket) Get(object string) (data []byte, err error) {
 }
 
 // 下载到本地文件
-func (b *Bucket) Download(object ,localPath string) error {
+func (b *Bucket) Download(object, localPath string) error {
 	req := &request{
 		bucket: b.Name,
 		path:   object,
@@ -595,10 +595,12 @@ func (req *request) urlencode() (*url.URL, error) {
 	}
 	re := regexp.MustCompile(req.bucket)
 	if re.MatchString(u.Host) {
-		u.Path = req.path
+		u.Path = urlquote(req.path)
 	} else {
-		u.Path = "/" + req.bucket + req.path
+		u.Path = "/" + urlquote(req.bucket) + urlquote(req.path)
 	}
+	// force golang's http client not call EscapedPath
+	u.Opaque = u.Path
 	return u, nil
 }
 
@@ -642,9 +644,9 @@ func (scs *SCS) prepare(req *request) error {
 			if strings.IndexAny(req.bucket, "/:@") >= 0 {
 				return fmt.Errorf("bad S3 bucket: %q", req.bucket)
 			}
-			req.signpath = "/" + req.bucket + (&url.URL{Path: req.path}).RequestURI()
+			req.signpath = "/" + urlquote(req.bucket) + (&url.URL{Path: urlquote(req.path), Opaque: urlquote(req.path)}).RequestURI()
 		} else {
-			req.signpath = (&url.URL{Path: req.path}).RequestURI()
+			req.signpath = (&url.URL{Path: urlquote(req.path), Opaque: urlquote(req.path)}).RequestURI()
 		}
 		req.baseuri = scs.EndPoint
 		req.baseuri = strings.Replace(req.baseuri, "$", req.bucket, -1)
@@ -728,4 +730,14 @@ func contMd5(data []byte) string {
 	md := md5.New()
 	md.Write(data)
 	return base64.StdEncoding.EncodeToString(md.Sum(nil))
+}
+
+//https://scs.sinacloud.com/doc/scs/guide#limitations
+//https://github.com/SinaCloudStorage/SinaStorage-SDK-Python/blob/2192dc3cb76fb792986242bf7b65e24bda5333b8/sinastorage/utils.py#L135
+func urlquote(u string) string {
+	v := make([]string, 0)
+	for _, s := range strings.Split(u, "/") {
+		v = append(v, url.QueryEscape(s))
+	}
+	return strings.Join(v, "/")
 }
