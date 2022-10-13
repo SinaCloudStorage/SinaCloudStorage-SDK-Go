@@ -13,6 +13,7 @@ Golang SDK for 新浪云存储
 package sinastoragegosdk
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/md5"
 	"crypto/sha1"
@@ -84,9 +85,9 @@ func (b *Bucket) ListBucket() (data []byte, err error) {
 	return data, err
 }
 
-//列出Bucket下的所有objects
+// 列出Bucket下的所有objects
 func (b *Bucket) ListObject(prefix, delimiter, marker string, maxKeys int) (data []byte, err error) {
-	var params = make(map[string][]string)
+	params := make(map[string][]string)
 	if prefix != "" {
 		params["prefix"] = []string{prefix}
 	}
@@ -111,7 +112,7 @@ func (b *Bucket) ListObject(prefix, delimiter, marker string, maxKeys int) (data
 // 获取bucket的meta或acl信息，"info"值为"meta" or "acl"
 func (b *Bucket) GetBucketInfo(info string) (data []byte, err error) {
 	info = strings.ToLower(info)
-	var params = make(map[string][]string)
+	params := make(map[string][]string)
 	if info == "acl" {
 		params["acl"] = []string{""}
 	} else {
@@ -129,7 +130,7 @@ func (b *Bucket) GetBucketInfo(info string) (data []byte, err error) {
 // 创建bucket
 func (b *Bucket) PutBucket(acl ACL) error {
 	header := map[string][]string{
-		"x-amz-acl": []string{string(acl)},
+		"x-amz-acl": {string(acl)},
 	}
 	req := &request{
 		method:  "PUT",
@@ -154,7 +155,7 @@ func (b *Bucket) DelBucket() error {
 
 // 获取object的meta或acl信息，"info"值为"meta" or "acl"
 func (b *Bucket) GetInfo(object string, info string) (data []byte, err error) {
-	var params = make(map[string][]string)
+	params := make(map[string][]string)
 	info = strings.ToLower(info)
 	if info == "acl" {
 		params["acl"] = []string{""}
@@ -169,7 +170,6 @@ func (b *Bucket) GetInfo(object string, info string) (data []byte, err error) {
 	}
 	data, err = b.query(req)
 	return data, err
-
 }
 
 // 下载object
@@ -209,7 +209,90 @@ func (b *Bucket) Download(object, localPath string) error {
 	return nil
 }
 
-//get object data by range
+// DownloadToChannel 下载按行读取写入到channel，执行完会关闭channel
+// 一次读取eachReadLineNum行写入到channel
+func (b *Bucket) DownloadToChannel(object string, channel chan<- []string, eachReadLineNum uint) error {
+	defer close(channel)
+	req := &request{
+		bucket: b.Name,
+		path:   object,
+	}
+	err := b.prepare(req)
+	if err != nil {
+		return err
+	}
+	hresp, err := b.run(req)
+	if err != nil {
+		if hresp != nil && hresp.Body != nil {
+			hresp.Body.Close()
+		}
+		return err
+	}
+	bodyBuf := bufio.NewReader(hresp.Body)
+	handleData := make([]string, 0, eachReadLineNum)
+	var readBufOffset int64
+	var rangeErr error
+	for {
+		data, err := bodyBuf.ReadString('\n')
+		if err != nil {
+			hresp.Body.Close()
+			// 读完了
+			if err == io.EOF {
+				dataStr := strings.TrimSpace(data)
+				if dataStr != "" {
+					handleData = append(handleData, dataStr)
+				}
+				break
+			}
+			// 断点续传
+			for i := 0; i < 100; i++ {
+				rangeHeaders := make(http.Header)
+				rangeHeaders.Add("Range", "bytes="+strconv.FormatInt(readBufOffset, 10)+"-")
+				rangeReq := &request{
+					bucket:  b.Name,
+					path:    object,
+					headers: rangeHeaders,
+				}
+				rangeErr = b.prepare(rangeReq)
+				if rangeErr != nil {
+					continue
+				}
+				hresp, rangeErr = b.run(rangeReq)
+				if rangeErr != nil {
+					if hresp != nil && hresp.Body != nil {
+						hresp.Body.Close()
+					}
+					continue
+				}
+				bodyBuf = bufio.NewReader(hresp.Body)
+				break
+			}
+			if rangeErr != nil {
+				if hresp != nil && hresp.Body != nil {
+					hresp.Body.Close()
+				}
+				return err
+			}
+			continue
+		}
+		readBufOffset += int64(len(data))
+		dataStr := strings.TrimSpace(data)
+		if dataStr == "" {
+			continue
+		}
+		handleData = append(handleData, dataStr)
+		if len(handleData) == int(eachReadLineNum) {
+			channel <- handleData
+			handleData = make([]string, 0, eachReadLineNum)
+		}
+	}
+	if len(handleData) > 0 {
+		channel <- handleData
+	}
+	return nil
+}
+
+// get object data by range
 func (b *Bucket) GetRange(object string, offset int64) (data []byte, err error) {
 	headers := make(http.Header)
 	headers.Add("Range", "bytes="+strconv.FormatInt(offset, 10)+"-")
@@ -225,7 +308,7 @@ func (b *Bucket) GetRange(object string, offset int64) (data []byte, err error) 
 // 过拷贝方式创建object（不上传具体的文件内容,而是通过COPY方式对系统内另一文件进行复制）
 func (b *Bucket) Copy(dstObject, srcBucket, srcObject string) error {
 	header := map[string][]string{
-		"x-amz-copy-source": []string{fmt.Sprintf("/%s/%s", srcBucket, srcObject)},
+		"x-amz-copy-source": {fmt.Sprintf("/%s/%s", srcBucket, srcObject)},
 	}
 	req := &request{
 		method:  "PUT",
@@ -250,7 +333,7 @@ func (b *Bucket) Put(object, uploadFile string, acl ACL) error {
 	return err
 }
 
-//PutWithMime upload file with content-type
+// PutWithMime upload file with content-type
 func (b *Bucket) PutWithMime(object, uploadFile string, acl ACL, contentType string) error {
 	if acl == "" {
 		acl = Private
@@ -387,7 +470,6 @@ func (b *Bucket) putSsk(path string, data []byte, acl ACL) (string, error) {
 		return "", nil
 	}
 	return ssk, nil
-
 }
 
 // 通过“秒传”方式创建Object（不上传具体的文件内容，而是通过SHA-1值对系统内文件进行复制）
@@ -410,7 +492,7 @@ func (b *Bucket) Relax(object, uploadFile string, acl ACL) error {
 		"x-amz-acl":     {string(acl)},
 		"Content-MD5":   {sha1F},
 	}
-	params := map[string][]string{"relax": []string{""}}
+	params := map[string][]string{"relax": {""}}
 	req := &request{
 		method:  "PUT",
 		bucket:  b.Name,
@@ -442,7 +524,7 @@ func (b *Bucket) RelaxWithSha1(object, sha1 string, size int64, acl ACL, metaHea
 			header[index] = []string{fmt.Sprintf("%s", val)}
 		}
 	}
-	params := map[string][]string{"relax": []string{""}}
+	params := map[string][]string{"relax": {""}}
 	req := &request{
 		method:  "PUT",
 		bucket:  b.Name,
@@ -458,9 +540,9 @@ func (b *Bucket) RelaxWithSha1(object, sha1 string, size int64, acl ACL, metaHea
 // meta 格式举例： meta := map[string]string{"x-amz-meta-name": "sandbox", "x-amz-meta-age": "13"}
 // 注意：这个接口无法更新文件的基本信息，如文件的大小和类型等
 func (b *Bucket) PutMeta(object string, meta map[string]string) error {
-	var header = make(map[string][]string)
+	header := make(map[string][]string)
 	if len(meta) > 0 {
-		params := map[string][]string{"meta": []string{""}}
+		params := map[string][]string{"meta": {""}}
 		for k, v := range meta {
 			header[k] = []string{v}
 		}
@@ -573,7 +655,7 @@ var sigleParams = map[string]bool{
 
 func (req *request) urlencode() (*url.URL, error) {
 	var sigleArray []string
-	var value = url.Values{}
+	value := url.Values{}
 	u, err := url.Parse(req.baseuri)
 	if err != nil {
 		return nil, fmt.Errorf("bad S3 endpoint URL %q: %v", req.baseuri, err)
@@ -697,6 +779,9 @@ func (scs *SCS) run(req *request) (hresp *http.Response, err error) {
 		return nil, err
 	}
 	if hresp.StatusCode != 200 && hresp.StatusCode != 204 && hresp.StatusCode != 206 {
+		if hresp.Body != nil {
+			hresp.Body.Close()
+		}
 		return nil, buildError(hresp)
 	}
 	return hresp, nil
