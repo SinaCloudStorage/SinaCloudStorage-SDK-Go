@@ -643,6 +643,7 @@ func (b *Bucket) SignURL(object string, expires time.Time) string {
 	if err != nil {
 		panic(err)
 	}
+	u.Opaque = ""
 	return u.String()
 }
 
