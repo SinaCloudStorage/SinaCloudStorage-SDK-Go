@@ -3,18 +3,18 @@
 /*
 Golang SDK for 新浪云存储
 
- S3官方API接口文档地址:
+	S3官方API接口文档地址:
 
- 	http://open.sinastorage.com/doc/scs/api
- Contact:
- 	s3storage@sina.com
-
+		http://open.sinastorage.com/doc/scs/api
+	Contact:
+		s3storage@sina.com
 */
 package sinastoragegosdk
 
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"encoding/base64"
@@ -55,16 +55,16 @@ func (scs *SCS) Bucket(name string) *Bucket {
 }
 
 /*
- 快捷ACL
+快捷ACL
 
- 	private 		Bucket和Object 	Owner权限 = FULL_CONTROL，其他人没有任何权限
- 	public-read 		Bucket和Object 	Owner权限 = FULL_CONTROL，GRPS000000ANONYMOUSE权限 = READ
- 	public-read-write 	Bucket和Object 	Owner权限 = FULL_CONTROL，GRPS000000ANONYMOUSE权限 = READ + WRITE
- 	authenticated-read 	Bucket和Object 	Owner权限 = FULL_CONTROL，GRPS0000000CANONICAL权限 = READ
+	private 		Bucket和Object 	Owner权限 = FULL_CONTROL，其他人没有任何权限
+	public-read 		Bucket和Object 	Owner权限 = FULL_CONTROL，GRPS000000ANONYMOUSE权限 = READ
+	public-read-write 	Bucket和Object 	Owner权限 = FULL_CONTROL，GRPS000000ANONYMOUSE权限 = READ + WRITE
+	authenticated-read 	Bucket和Object 	Owner权限 = FULL_CONTROL，GRPS0000000CANONICAL权限 = READ
 
- 	GRPS0000000CANONICAL：此组表示所有的新浪云存储注册帐户。所有的请求必须签名（认证），如果签名认证通过，即可按照已设置的权限规则进行访问。
- 	GRPS000000ANONYMOUSE：匿名用户组，对应的请求可以不带签名。
- 	SINA000000000000IMGX：图片处理服务，将您的bucket的ACL设置为对SINA000000000000IMGX的读写权限，在您使用图片处理服务的时候可以免签名。
+	GRPS0000000CANONICAL：此组表示所有的新浪云存储注册帐户。所有的请求必须签名（认证），如果签名认证通过，即可按照已设置的权限规则进行访问。
+	GRPS000000ANONYMOUSE：匿名用户组，对应的请求可以不带签名。
+	SINA000000000000IMGX：图片处理服务，将您的bucket的ACL设置为对SINA000000000000IMGX的读写权限，在您使用图片处理服务的时候可以免签名。
 */
 type ACL string
 
@@ -74,6 +74,12 @@ const (
 	PublicReadWrite   = ACL("public-read-write")
 	AuthenticatedRead = ACL("authenticated-read")
 )
+
+// DownloadToChannelErr 按行读取写入channel错误结构
+type DownloadToChannelErr struct {
+	Err         error
+	LineContent string // 报错时读取到的内容
+}
 
 // 列出用户账户下所有的buckets
 func (b *Bucket) ListBucket() (data []byte, err error) {
@@ -211,6 +217,7 @@ func (b *Bucket) Download(object, localPath string) error {
 
 // DownloadToChannel 下载按行读取写入到channel，执行完会关闭channel
 // 一次读取eachReadLineNum行写入到channel
+// Deprecated: 已废弃，如果err非nil非eof有可能造成死循环，请使用DownloadToChannelWithErr
 func (b *Bucket) DownloadToChannel(object string, channel chan<- []string, eachReadLineNum uint) error {
 	defer close(channel)
 	req := &request{
@@ -290,6 +297,113 @@ func (b *Bucket) DownloadToChannel(object string, channel chan<- []string, eachR
 		channel <- handleData
 	}
 	return nil
+}
+
+// DownloadToChannelWithErr 下载按行读取写入到channel，执行完会关闭channel
+// ctx 可通过ctx控制提前结束读取
+// 一次读取eachReadLineNum行写入到channel
+// 需要单独开一个协程接收读取中间的错误
+func (b *Bucket) DownloadToChannelWithErr(ctx context.Context, object string, channel chan<- []string, channelErr chan<- *DownloadToChannelErr, eachReadLineNum uint, delim byte) error {
+	defer close(channelErr)
+	defer close(channel)
+	req := &request{
+		bucket: b.Name,
+		path:   object,
+	}
+	err := b.prepare(req)
+	if err != nil {
+		return err
+	}
+	hresp, err := b.run(req)
+	if err != nil {
+		if hresp != nil && hresp.Body != nil {
+			hresp.Body.Close()
+		}
+		return err
+	}
+	bodyBuf := bufio.NewReader(hresp.Body)
+	handleData := make([]string, 0, eachReadLineNum)
+	var readBufOffset int64
+	var rangeErr error
+	for {
+		data, err := bodyBuf.ReadString(delim)
+		if err != nil {
+			hresp.Body.Close()
+			// 读完了
+			if err == io.EOF {
+				dataStr := strings.TrimSpace(data)
+				if dataStr != "" {
+					handleData = append(handleData, dataStr)
+				}
+				if len(handleData) > 0 {
+					select {
+					case <-ctx.Done():
+						return nil
+					case channel <- handleData:
+					}
+				}
+				return nil
+			} else {
+				// 如果在读取中间遇到非预期的错误，传递出去，并跳过此行
+				readBufOffset += int64(len(data))
+				dataStr := strings.TrimSpace(data)
+				select {
+				case <-ctx.Done():
+					return nil
+				case channelErr <- &DownloadToChannelErr{Err: err, LineContent: dataStr}:
+				}
+			}
+			// 断点续传
+			for i := 0; i < 100; i++ {
+				rangeHeaders := make(http.Header)
+				rangeHeaders.Add("Range", "bytes="+strconv.FormatInt(readBufOffset, 10)+"-")
+				rangeReq := &request{
+					bucket:  b.Name,
+					path:    object,
+					headers: rangeHeaders,
+				}
+				rangeErr = b.prepare(rangeReq)
+				if rangeErr != nil {
+					continue
+				}
+				hresp, rangeErr = b.run(rangeReq)
+				if rangeErr != nil {
+					if hresp != nil && hresp.Body != nil {
+						hresp.Body.Close()
+					}
+					continue
+				}
+				bodyBuf = bufio.NewReader(hresp.Body)
+				break
+			}
+			if rangeErr != nil {
+				if hresp != nil && hresp.Body != nil {
+					hresp.Body.Close()
+				}
+				select {
+				case <-ctx.Done():
+					return nil
+				case channelErr <- &DownloadToChannelErr{Err: rangeErr}:
+				}
+				return nil
+			}
+			continue
+		}
+		readBufOffset += int64(len(data))
+		dataStr := strings.TrimSpace(data)
+		if dataStr == "" {
+			continue
+		}
+		handleData = append(handleData, dataStr)
+		if len(handleData) == int(eachReadLineNum) {
+			select {
+			case <-ctx.Done():
+				return nil
+			case channel <- handleData:
+				handleData = make([]string, 0, eachReadLineNum)
+			}
+		}
+	}
 }
 
 // get object data by range
@@ -763,11 +877,11 @@ func (scs *SCS) run(req *request) (hresp *http.Response, err error) {
 	htCli := &http.Client{
 		Transport: &http.Transport{
 			Dial: func(netw, addr string) (net.Conn, error) {
-				c, err := net.DialTimeout(netw, addr, time.Second*5) //设置建立连接超时时间
+				c, err := net.DialTimeout(netw, addr, time.Second*5) // 设置建立连接超时时间
 				if err != nil {
 					return nil, err
 				}
-				//c.SetDeadline(time.Now().Add(3 * time.Second)) //设置发送接收数据超时
+				// c.SetDeadline(time.Now().Add(3 * time.Second)) //设置发送接收数据超时
 				return c, nil
 			},
 		},
@@ -818,8 +932,8 @@ func contMd5(data []byte) string {
 	return base64.StdEncoding.EncodeToString(md.Sum(nil))
 }
 
-//https://scs.sinacloud.com/doc/scs/guide#limitations
-//https://github.com/SinaCloudStorage/SinaStorage-SDK-Python/blob/2192dc3cb76fb792986242bf7b65e24bda5333b8/sinastorage/utils.py#L135
+// https://scs.sinacloud.com/doc/scs/guide#limitations
+// https://github.com/SinaCloudStorage/SinaStorage-SDK-Python/blob/2192dc3cb76fb792986242bf7b65e24bda5333b8/sinastorage/utils.py#L135
 func urlquote(u string) string {
 	v := make([]string, 0)
 	for _, s := range strings.Split(u, "/") {
