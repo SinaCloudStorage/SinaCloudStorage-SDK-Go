@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -439,7 +438,7 @@ func (b *Bucket) Put(object, uploadFile string, acl ACL) error {
 	if acl == "" {
 		acl = Private
 	}
-	data, err := ioutil.ReadFile(uploadFile)
+	data, err := os.ReadFile(uploadFile)
 	if err != nil {
 		return err
 	}
@@ -452,7 +451,7 @@ func (b *Bucket) PutWithMime(object, uploadFile string, acl ACL, contentType str
 	if acl == "" {
 		acl = Private
 	}
-	data, err := ioutil.ReadFile(uploadFile)
+	data, err := os.ReadFile(uploadFile)
 	if err != nil {
 		return err
 	}
@@ -475,7 +474,7 @@ func (b *Bucket) PutExpire(object, uploadFile string, acl ACL, expire time.Time)
 	if acl == "" {
 		acl = Private
 	}
-	data, err := ioutil.ReadFile(uploadFile)
+	data, err := os.ReadFile(uploadFile)
 	if err != nil {
 		return err
 	}
@@ -542,7 +541,7 @@ func (b *Bucket) PutSsk(object, uploadFile string, acl ACL) (string, error) {
 	if acl == "" {
 		acl = Private
 	}
-	data, err := ioutil.ReadFile(uploadFile)
+	data, err := os.ReadFile(uploadFile)
 	if err != nil {
 		return "", err
 	}
@@ -591,7 +590,7 @@ func (b *Bucket) Relax(object, uploadFile string, acl ACL) error {
 	if acl == "" {
 		acl = Private
 	}
-	data, err := ioutil.ReadFile(uploadFile)
+	data, err := os.ReadFile(uploadFile)
 	if err != nil {
 		return err
 	}
@@ -810,7 +809,7 @@ func (scs *SCS) query(req *request) (data []byte, err error) {
 	if err != nil || hresp == nil {
 		return nil, err
 	}
-	data, err = ioutil.ReadAll(hresp.Body)
+	data, err = io.ReadAll(hresp.Body)
 	hresp.Body.Close()
 	return data, err
 }
@@ -838,7 +837,7 @@ func (scs *SCS) prepare(req *request) error {
 		}
 
 		if req.bucket != "" {
-			if strings.IndexAny(req.bucket, "/:@") >= 0 {
+			if strings.ContainsAny(req.bucket, "/:@") {
 				return fmt.Errorf("bad S3 bucket: %q", req.bucket)
 			}
 			req.signpath = "/" + urlquote(req.bucket) + (&url.URL{Path: urlquote(req.path), Opaque: urlquote(req.path)}).RequestURI()
@@ -887,7 +886,7 @@ func (scs *SCS) run(req *request) (hresp *http.Response, err error) {
 		},
 	}
 	if req.body != nil {
-		hreq.Body = ioutil.NopCloser(req.body)
+		hreq.Body = io.NopCloser(req.body)
 	}
 	hresp, err = htCli.Do(&hreq)
 	if err != nil {
