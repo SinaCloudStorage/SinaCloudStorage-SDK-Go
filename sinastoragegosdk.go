@@ -916,13 +916,13 @@ func (e *Error) Error() string {
 func buildError(r *http.Response) error {
 	var err Error
 	err.StatusCode = r.StatusCode
-	err.RequestId = r.Header["X-Requestid"][0]
-	if ErrCode, ok := r.Header["X-Error-Code"]; ok {
-		err.ErrorCode = ErrCode[0]
+	err.RequestId = r.Header.Get("X-Requestid")
+	if errCode := r.Header.Get("X-Error-Code"); errCode != "" {
+		err.ErrorCode = errCode
 	} else {
 		err.ErrorCode = strconv.FormatInt(int64(r.StatusCode), 10)
 	}
-	err.Date = r.Header["Date"][0]
+	err.Date = r.Header.Get("Date")
 	return &err
 }
 
